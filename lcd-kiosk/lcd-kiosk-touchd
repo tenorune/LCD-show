@@ -22,6 +22,7 @@ def find_device():
         dev = InputDevice(path)
         if DEVICE_NAME in dev.name:
             return dev
+        dev.close()
     return None
 
 
