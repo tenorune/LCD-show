@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # On-LCD touch menu. Renders each kiosk app as a large, centered, full-width
-# button stacked vertically to fill the panel; tapping one sets it as the default
-# and switches the LCD to it. Intended to run as the 'menu' kiosk app (inside the
-# fb1 X server, which has no window manager -- hence the explicit geometry).
+# button stacked vertically and centered on the panel; tapping one sets it as the
+# default and switches the LCD to it. Intended to run as the 'menu' kiosk app
+# (inside the fb1 X server, which has no window manager -- hence the explicit
+# geometry and the dark root background).
 set -euo pipefail
 
 LCD_KIOSK_LIB="${LCD_KIOSK_LIB:-/usr/local/lib/lcd-kiosk/lib.sh}"
 LCD_KIOSK_CONF="${LCD_KIOSK_CONF:-/etc/lcd-kiosk/kiosk.conf}"
 # Panel size; override via the environment if your panel differs.
-LCD_MENU_GEOMETRY="${LCD_MENU_GEOMETRY:-480x320+0+0}"
+LCD_MENU_WIDTH="${LCD_MENU_WIDTH:-480}"
+LCD_MENU_HEIGHT="${LCD_MENU_HEIGHT:-320}"
 # shellcheck source=/dev/null
 . "$LCD_KIOSK_LIB"
 
@@ -16,17 +18,28 @@ LCD_MENU_GEOMETRY="${LCD_MENU_GEOMETRY:-480x320+0+0}"
 mapfile -t apps < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
 [ "${#apps[@]}" -gt 0 ] || exit 0
 
-# Scale the fonts up reliably. CSS font-size is overridden by the GTK theme on
-# some yad builds, so use GDK_DPI_SCALE (a font-rendering multiplier that ignores
-# the theme). ~6.5 gives roughly 88px labels; tune via LCD_MENU_FONT_SCALE.
-export GDK_DPI_SCALE="${LCD_MENU_FONT_SCALE:-6.5}"
+# Font size: CSS font-size is ignored by some yad builds, so scale via
+# GDK_DPI_SCALE (theme-independent). Tune with LCD_MENU_FONT_SCALE.
+export GDK_DPI_SCALE="${LCD_MENU_FONT_SCALE:-3.5}"
 
-# Inline styling (dark background to match the kiosk).
+# Paint the screen background dark so the smaller, centered menu blends in.
+# Harmless if xsetroot isn't installed.
+if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid "#101418" || true
+fi
+
+# Size the window to its buttons and center it vertically on the panel.
+read -r win_h win_y < <(awk -v s="$GDK_DPI_SCALE" -v n="${#apps[@]}" -v H="$LCD_MENU_HEIGHT" 'BEGIN {
+    bh = s * 22 + 18;          # approx button height (px) for the current scale
+    h = n * bh + 24;           # + window padding
+    if (h > H) h = H;
+    y = int((H - h) / 2); if (y < 0) y = 0;
+    printf "%d %d", h, y;
+}')
+
 css="$(mktemp --suffix=.css)"
 trap 'rm -f "$css"' EXIT
-cat > "$css" <<'EOF'
-window { background-color: #101418; }
-EOF
+printf 'window { background-color: #101418; }\n' > "$css"
 
 # One full-width button per app, stacked vertically (--columns=1). Each button
 # runs `lcd-kiosk set <app>`, which restarts the kiosk onto the chosen app
@@ -36,5 +49,5 @@ for a in "${apps[@]}"; do
     args+=( --field="$a:FBTN" "lcd-kiosk set $a" )
 done
 
-exec yad --geometry="$LCD_MENU_GEOMETRY" --css="$css" \
+exec yad --geometry="${LCD_MENU_WIDTH}x${win_h}+0+${win_y}" --css="$css" \
     --form --columns=1 --no-buttons "${args[@]}" 2>/dev/null
