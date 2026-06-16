@@ -4,6 +4,8 @@ After=lcd-kiosk.service
 
 [Service]
 Type=simple
+# Runs as root (no User=) so it can read the touch device under /dev/input/*
+# without input-group membership. It only observes events; it never grabs them.
 ExecStart=/usr/local/bin/lcd-kiosk-touchd
 Restart=on-failure
 RestartSec=3
