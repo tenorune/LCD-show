@@ -4,6 +4,12 @@ After=multi-user.target
 
 [Service]
 Type=simple
+# Hide the KMS GPU (/dev/dri) from this service's X server. Raspberry Pi OS ships
+# an Xorg OutputClass that pins /dev/dri/card0 as the PrimaryGPU; without this, the
+# dedicated fbdev X server grabs the vc4 card too and dies with "Cannot run in
+# framebuffer mode. Please specify busIDs". labwc/Connect run in the normal
+# namespace and keep full /dev/dri access, so screen sharing is unaffected.
+InaccessiblePaths=/dev/dri
 ExecStart=/usr/local/bin/lcd-kiosk-start
 Restart=on-failure
 RestartSec=3

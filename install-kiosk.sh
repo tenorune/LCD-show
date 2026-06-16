@@ -19,7 +19,7 @@ echo "Installing kiosk for user: $user"
 
 # --- Packages ----------------------------------------------------------------
 apt-get update
-apt-get install -y chromium xterm yad python3-evdev whiptail
+apt-get install -y chromium xterm yad python3-evdev whiptail xfonts-base
 
 # --- Library + executables ---------------------------------------------------
 install -d /usr/local/lib/lcd-kiosk
