@@ -21,7 +21,7 @@ css="$(mktemp --suffix=.css)"
 trap 'rm -f "$css"' EXIT
 cat > "$css" <<'EOF'
 window { background-color: #101418; }
-button { font-size: 88px; }
+button, button label, button > label { font-size: 88px; }
 EOF
 
 # One full-width button per app, stacked vertically (--columns=1). Each button
