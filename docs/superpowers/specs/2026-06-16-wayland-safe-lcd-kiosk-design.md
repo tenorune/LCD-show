@@ -28,7 +28,11 @@ remote screen sharing stops working after running `LCD35-show`.
 1. Keep the `labwc`/Wayland session intact so **Raspberry Pi Connect keeps working**
    (both screen sharing and remote shell).
 2. Bring up the 3.5″ SPI panel and the **XPT2046 touch** input.
-3. Run **one swappable full‑screen kiosk app** (default: Chromium) on the LCD.
+3. Run **one swappable full‑screen kiosk app** on the LCD. Chromium is only the
+   *reference* app — the kiosk must run **any single command** equally well: a
+   browser dashboard, a terminal / text status screen (e.g. `htop` or logs), or a
+   specific GUI application. Switching between these is a one‑line config change,
+   with no installer changes.
 4. Structure the work so **Approach A** (DRM panel + Wayland `cage` kiosk) can be
    tried later by swapping two well‑isolated pieces, without a rewrite.
 
@@ -91,10 +95,23 @@ reviewable and the original behavior remains available.
   config file below.
 - **`lcd-kiosk.service`** — systemd unit that runs `lcd-kiosk-start.sh`, ordered
   after the graphical session is up, restarts on failure.
-- **`/etc/lcd-kiosk/kiosk.conf`** — single config file defining `KIOSK_CMD`
-  (default: `chromium-browser --kiosk <URL>` or the Trixie package name
-  `chromium`). **Swapping the app = editing this one line.** Default `URL` points
-  to a local placeholder page shipped with the installer.
+- **`/etc/lcd-kiosk/kiosk.conf`** — single config file defining `KIOSK_CMD`, an
+  **arbitrary command** the kiosk runs full‑screen on the LCD. **Swapping the app =
+  editing this one line**, no installer changes. The launcher treats the app as
+  opaque, so the kiosk is genuinely app‑agnostic.
+
+  The installer ships the file with the reference app active and other presets
+  present but commented out, so switching is uncommenting one line:
+  - **Browser dashboard (default/reference):** `chromium --kiosk <URL>` (Trixie
+    package is `chromium`; `--kiosk` for full screen). Default `URL` points to a
+    local placeholder page shipped with the installer.
+  - **Terminal / text status:** a terminal emulator running a text program,
+    e.g. `xterm -fullscreen -e htop` (or `tail -F` of a log). This is the
+    lightest‑weight option.
+  - **Specific GUI app:** any X client command the user provides, run full‑screen.
+
+  Because the launcher only needs a command string, none of these require touching
+  the installer or service — only `kiosk.conf`.
 
 ### Touch routing
 
@@ -132,11 +149,14 @@ LCD shows the console, touch events register, Connect still screen‑shares.
 - `rpi-connect doctor` is clean and remote screen sharing works.
 
 ### Milestone 2 — Approach B
-Full‑screen Chromium on the LCD, touch drives it, calibrated, Connect unaffected.
+Full‑screen Chromium (the reference app) on the LCD, touch drives it, calibrated,
+Connect unaffected.
 **Accept when:**
 - Chromium fills the LCD.
 - Taps land where you touch (calibration correct).
 - Remote Connect screen sharing still works.
+- Swapping `KIOSK_CMD` in `kiosk.conf` to the terminal/status preset (and
+  restarting the service) shows that app instead — confirming app‑agnostic design.
 
 ## Safety & error handling
 
