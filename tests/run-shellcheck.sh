@@ -8,6 +8,7 @@ targets=(
     lcd-kiosk/lib.sh
     LCD35-show-safe
     lcd-kiosk/lcd-kiosk-start.sh
+    install-kiosk.sh
 )
 
 # Tolerate not-yet-created files so the gate can be run at any point in the plan.

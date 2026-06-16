@@ -1,0 +1,13 @@
+[Unit]
+Description=LCD kiosk (single app on the SPI display)
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/lcd-kiosk-start
+Restart=on-failure
+RestartSec=3
+# User= is provided by an installer-generated drop-in (the desktop user).
+
+[Install]
+WantedBy=multi-user.target
