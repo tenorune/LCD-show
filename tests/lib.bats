@@ -78,3 +78,15 @@ teardown() {
     run grep -c '^KIOSK_DEFAULT=' "$CONF"
     [ "$output" = "1" ]
 }
+
+@test "kiosk_set_default works when the parent dir is not writable" {
+    # Regression: sed -i failed here because it must create a temp file in the
+    # parent directory. Make the dir read-only (keep the file writable); the
+    # function must still update the pointer in place.
+    chmod u-w "$TMP"
+    run kiosk_set_default "$CONF" status
+    chmod u+w "$TMP"   # restore so teardown can remove the temp dir
+    [ "$status" -eq 0 ]
+    run kiosk_get_default "$CONF"
+    [ "$output" = "status" ]
+}

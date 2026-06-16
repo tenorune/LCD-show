@@ -45,17 +45,25 @@ kiosk_get_default() {
 }
 
 # kiosk_set_default CONF NAME
-# Set KIOSK_DEFAULT to NAME (must exist in the catalog), rewriting in place.
-# Returns 1 without modifying CONF if NAME is unknown.
+# Set KIOSK_DEFAULT to NAME (must exist in the catalog). Returns 1 without
+# modifying CONF if NAME is unknown.
+# Edits CONF in place (truncate + rewrite the same inode) rather than with
+# `sed -i`, so it needs write permission only on the file itself, not on the
+# parent directory. In production /etc/lcd-kiosk is root-owned while kiosk.conf
+# is chowned to the desktop user; `sed -i` (which creates a temp file in the
+# parent dir) would fail there.
 kiosk_set_default() {
-    local conf="$1" name="$2"
+    local conf="$1" name="$2" tmp
     if ! kiosk_list_apps "$conf" | grep -qxF -- "$name"; then
         printf 'lcd-kiosk: unknown app: %s\n' "$name" >&2
         return 1
     fi
+    tmp="$(mktemp)"
     if grep -qE '^[[:space:]]*KIOSK_DEFAULT=' "$conf"; then
-        sed -i -E "s|^[[:space:]]*KIOSK_DEFAULT=.*|KIOSK_DEFAULT=\"$name\"|" "$conf"
+        sed -E "s|^[[:space:]]*KIOSK_DEFAULT=.*|KIOSK_DEFAULT=\"$name\"|" "$conf" > "$tmp"
     else
-        printf 'KIOSK_DEFAULT="%s"\n' "$name" >> "$conf"
+        { cat "$conf"; printf 'KIOSK_DEFAULT="%s"\n' "$name"; } > "$tmp"
     fi
+    cat "$tmp" > "$conf"
+    rm -f "$tmp"
 }
