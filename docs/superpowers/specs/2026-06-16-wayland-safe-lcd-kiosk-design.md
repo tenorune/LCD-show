@@ -31,8 +31,11 @@ remote screen sharing stops working after running `LCD35-show`.
 3. Run **one swappable full‑screen kiosk app** on the LCD. Chromium is only the
    *reference* app — the kiosk must run **any single command** equally well: a
    browser dashboard, a terminal / text status screen (e.g. `htop` or logs), or a
-   specific GUI application. Switching between these is a one‑line config change,
-   with no installer changes.
+   specific GUI application. Provide three ways to choose it, all persisting the
+   choice as the new boot default:
+   1. a **default app on boot**,
+   2. a **shell selector command** to change it from an SSH / Connect shell,
+   3. an **on‑LCD touch menu** to change it by touch.
 4. Structure the work so **Approach A** (DRM panel + Wayland `cage` kiosk) can be
    tried later by swapping two well‑isolated pieces, without a rewrite.
 
@@ -90,28 +93,59 @@ reviewable and the original behavior remains available.
 
 ### Kiosk on the LCD (Milestone 2)
 
-- **`lcd-kiosk-start.sh`** — launches a minimal X server bound to `/dev/fb1`
-  (fbdev driver) running a single full‑screen app. Reads the app command from the
-  config file below.
+The kiosk is **app‑agnostic**: it runs *any* single command full‑screen on the LCD.
+Chromium is only the reference app; a terminal/text‑status screen or a specific GUI
+app work identically.
+
+#### Selection model (one source of truth)
+
+`/etc/lcd-kiosk/kiosk.conf` holds two things:
+
+1. A **catalog** of named apps, each mapping a name to an arbitrary command, e.g.:
+   - `browser` → `chromium --kiosk <URL>` (Trixie package is `chromium`; `--kiosk`
+     for full screen). Default `URL` is a local placeholder page shipped with the
+     installer.
+   - `status` → a terminal running a text program, e.g. `xterm -fullscreen -e htop`
+     (or `tail -F` of a log). Lightest‑weight option.
+   - `menu` → the on‑LCD touch menu (see below).
+   - the user can add their own named entries for a specific GUI app.
+2. A single pointer **`KIOSK_DEFAULT=<name>`** — the currently selected app, which is
+   also the **boot default**.
+
+All three interaction surfaces below funnel through this one pointer, so persistence
+is automatic and there is a single source of truth. The catalog is open‑ended:
+adding an app = adding one `name → command` line; nothing else changes.
+
+#### Components
+
+- **`lcd-kiosk-start.sh`** — the deterministic launcher (single responsibility).
+  Reads `KIOSK_DEFAULT`, looks up its command, and runs it in a minimal X server
+  bound to `/dev/fb1` (fbdev driver), full‑screen. No interactivity. This is what
+  the service calls.
 - **`lcd-kiosk.service`** — systemd unit that runs `lcd-kiosk-start.sh`, ordered
-  after the graphical session is up, restarts on failure.
-- **`/etc/lcd-kiosk/kiosk.conf`** — single config file defining `KIOSK_CMD`, an
-  **arbitrary command** the kiosk runs full‑screen on the LCD. **Swapping the app =
-  editing this one line**, no installer changes. The launcher treats the app as
-  opaque, so the kiosk is genuinely app‑agnostic.
+  after the graphical session is up, restarts on failure. This provides **(1) the
+  default kiosk app on boot**.
+- **`/etc/lcd-kiosk/kiosk.conf`** — the catalog + `KIOSK_DEFAULT` described above.
+- **`lcd-kiosk`** — **(2) the shell selector command.** Run from an SSH / Connect
+  remote shell. Presents a menu of catalog entries (`whiptail` TUI, or a numbered
+  list / `lcd-kiosk set <name>` non‑interactive form). On selection it **writes
+  `KIOSK_DEFAULT`** (so the choice becomes the new boot default) and restarts the
+  service so the LCD switches immediately. `lcd-kiosk menu` switches the LCD to the
+  on‑LCD touch menu.
+- **On‑LCD touch menu** — **(3) the touch selector.** A small menu rendered on the
+  LCD listing the catalog entries; tapping one performs the same "write
+  `KIOSK_DEFAULT` + restart" action, so a touch choice also persists across reboot.
+  Implemented as a catalog app itself (name `menu`), so it reuses the launcher.
+  - **Invocation:** the boards have no physical buttons, so summoning the menu while
+    another app fills the screen needs a touch trigger. Design: a lightweight
+    background **gesture watcher** (`lcd-kiosk-touchd`) reads the touch event device
+    and invokes `lcd-kiosk menu` on a reserved gesture (e.g. a long‑press in a
+    screen corner). The shell command `lcd-kiosk menu` is the reliable fallback, and
+    `menu` can also be set as `KIOSK_DEFAULT` to make it the home screen.
 
-  The installer ships the file with the reference app active and other presets
-  present but commented out, so switching is uncommenting one line:
-  - **Browser dashboard (default/reference):** `chromium --kiosk <URL>` (Trixie
-    package is `chromium`; `--kiosk` for full screen). Default `URL` points to a
-    local placeholder page shipped with the installer.
-  - **Terminal / text status:** a terminal emulator running a text program,
-    e.g. `xterm -fullscreen -e htop` (or `tail -F` of a log). This is the
-    lightest‑weight option.
-  - **Specific GUI app:** any X client command the user provides, run full‑screen.
-
-  Because the launcher only needs a command string, none of these require touching
-  the installer or service — only `kiosk.conf`.
+Because every surface only changes `KIOSK_DEFAULT` and restarts the service, none of
+them reimplements launching, and swapping/adding apps never touches the installer or
+service.
 
 ### Touch routing
 
@@ -120,10 +154,17 @@ mini‑X server claims it via evdev with an axis/calibration transform. A udev r
 `labwc` input config makes the main Wayland session **ignore** that device, so the
 touchscreen drives the kiosk on the LCD rather than the remote desktop cursor.
 
+The gesture watcher (`lcd-kiosk-touchd`, see touch menu above) needs to observe
+touch events even while a kiosk app is running. It reads the same evdev device the
+kiosk X server uses; whether it reads in parallel or via the X server is an
+implementation detail to settle in the plan (see Open risks). It does not need to
+consume events — only detect the summon gesture.
+
 ### Revert
 
 - **`LCD-revert`** — restores `/boot/firmware/config.txt` and related files from the
-  backup taken by `system_backup.sh`, disables and removes the kiosk service.
+  backup taken by `system_backup.sh`, disables and removes the kiosk service and the
+  gesture watcher.
 
 ## Groundwork for Approach A (later)
 
@@ -132,8 +173,10 @@ Two backends are isolated behind clear seams so A reuses everything else:
 - **Panel backend:** B uses `tft35a` (fbtft → `/dev/fb1`). A swaps to a DRM panel
   overlay (`panel-mipi-dbi` + generated init blob → `/dev/dri/card1`).
 - **Kiosk backend:** B uses "X‑on‑fb1". A swaps to "`cage` on the DRM card".
-- **Unchanged across both:** the touch overlay + calibration, and `kiosk.conf`
-  (which app to run).
+- **Unchanged across both:** the touch overlay + calibration, the `kiosk.conf`
+  catalog + `KIOSK_DEFAULT` model, and all three selection surfaces (boot default,
+  `lcd-kiosk` shell selector, on‑LCD touch menu). These manipulate the selection
+  pointer, not the launch backend, so they carry over to A unchanged.
 
 The installer keeps the panel‑backend and kiosk‑backend choices in separate,
 sourced fragments (or a single variable each) so switching to A means editing two
@@ -149,14 +192,17 @@ LCD shows the console, touch events register, Connect still screen‑shares.
 - `rpi-connect doctor` is clean and remote screen sharing works.
 
 ### Milestone 2 — Approach B
-Full‑screen Chromium (the reference app) on the LCD, touch drives it, calibrated,
-Connect unaffected.
+The default kiosk app runs on boot; both selectors can change it (and the change
+persists); touch drives the running app; Connect unaffected. Chromium is the
+reference app.
 **Accept when:**
-- Chromium fills the LCD.
+- On boot, the app named by `KIOSK_DEFAULT` (default: Chromium) fills the LCD.
 - Taps land where you touch (calibration correct).
 - Remote Connect screen sharing still works.
-- Swapping `KIOSK_CMD` in `kiosk.conf` to the terminal/status preset (and
-  restarting the service) shows that app instead — confirming app‑agnostic design.
+- `lcd-kiosk` (shell) switches the LCD to another catalog app, and that choice
+  survives a reboot — confirming the selector sets the new default.
+- The on‑LCD touch menu can be summoned, and tapping an entry switches the LCD to
+  that app and likewise persists across reboot.
 
 ## Safety & error handling
 
@@ -182,3 +228,9 @@ scripts are adjusted accordingly.
 - Chromium under fbdev‑X is software‑rendered → adequate for a dashboard, not fast.
 - The primary Wayland output already exists (Connect worked before LCD‑show), so the
   installer must avoid disturbing it.
+- **Highest‑risk piece:** the on‑LCD touch‑menu gesture watcher (`lcd-kiosk-touchd`)
+  must coexist with the running kiosk app's own touch handling — detecting the
+  summon gesture without stealing taps from the app. Reading the evdev device in
+  parallel with the X server, or filtering at the right layer, needs validation on
+  the Pi. The `lcd-kiosk menu` shell command is the always‑works fallback if the
+  gesture proves unreliable.
