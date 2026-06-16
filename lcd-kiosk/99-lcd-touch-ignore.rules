@@ -1,0 +1,5 @@
+# Make the Wayland compositor's libinput ignore the XPT2046/ADS7846 touchscreen,
+# so the dedicated kiosk X server (which uses xserver-xorg-input-evdev, not
+# libinput) is the only consumer. This keeps the touchscreen driving the LCD
+# kiosk rather than the remote desktop cursor.
+SUBSYSTEM=="input", ATTRS{name}=="ADS7846 Touchscreen", ENV{LIBINPUT_IGNORE_DEVICE}="1"
