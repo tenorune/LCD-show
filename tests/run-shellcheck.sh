@@ -10,6 +10,7 @@ targets=(
     lcd-kiosk/lcd-kiosk-start.sh
     install-kiosk.sh
     lcd-kiosk/lcd-kiosk
+    lcd-kiosk/lcd-kiosk-menu
 )
 
 # Tolerate not-yet-created files so the gate can be run at any point in the plan.

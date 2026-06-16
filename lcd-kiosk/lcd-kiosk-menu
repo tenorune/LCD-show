@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# On-LCD touch menu. Renders the kiosk catalog as a touch-clickable list (yad);
+# selecting an entry sets it as the default and switches the LCD to it. Intended
+# to run as the 'menu' kiosk app (inside the fb1 X server).
+set -euo pipefail
+
+LCD_KIOSK_LIB="${LCD_KIOSK_LIB:-/usr/local/lib/lcd-kiosk/lib.sh}"
+LCD_KIOSK_CONF="${LCD_KIOSK_CONF:-/etc/lcd-kiosk/kiosk.conf}"
+# shellcheck source=/dev/null
+. "$LCD_KIOSK_LIB"
+
+# Build the choosable list (exclude the menu entry itself).
+mapfile -t choices < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
+
+choice="$(printf '%s\n' "${choices[@]}" \
+    | yad --list --title="LCD menu" --no-headers \
+          --column="Show on LCD" --width=320 --height=240 \
+          --button="Select:0" 2>/dev/null)" || exit 0
+
+choice="${choice%|}"   # yad appends a trailing field separator
+[ -n "$choice" ] || exit 0
+
+# Persist + switch. lcd-kiosk restarts the service, replacing this menu with the
+# chosen app.
+lcd-kiosk set "$choice"
