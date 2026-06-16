@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# On-LCD touch menu. Renders each kiosk app as a large, centered, touch-friendly
-# button filling the panel; tapping one sets it as the default and switches the
-# LCD to it. Intended to run as the 'menu' kiosk app (inside the fb1 X server,
-# which has no window manager -- hence the explicit geometry).
+# On-LCD touch menu. Renders each kiosk app as a large, centered, full-width
+# button stacked vertically to fill the panel; tapping one sets it as the default
+# and switches the LCD to it. Intended to run as the 'menu' kiosk app (inside the
+# fb1 X server, which has no window manager -- hence the explicit geometry).
 set -euo pipefail
 
 LCD_KIOSK_LIB="${LCD_KIOSK_LIB:-/usr/local/lib/lcd-kiosk/lib.sh}"
@@ -16,31 +16,21 @@ LCD_MENU_GEOMETRY="${LCD_MENU_GEOMETRY:-480x320+0+0}"
 mapfile -t apps < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
 [ "${#apps[@]}" -gt 0 ] || exit 0
 
-# Large, dark, touch-friendly styling for the small panel.
+# Inline styling -- edit the font-size here to taste.
 css="$(mktemp --suffix=.css)"
 trap 'rm -f "$css"' EXIT
 cat > "$css" <<'EOF'
 window { background-color: #101418; }
-label  { color: #cfd8e0; font-size: 18px; }
-button { font-size: 44px; min-height: 150px; margin: 10px; }
+button { font-size: 88px; }
 EOF
 
-# One big button per app; each button returns a distinct exit code.
+# One full-width button per app, stacked vertically (--columns=1). Each button
+# runs `lcd-kiosk set <app>`, which restarts the kiosk onto the chosen app
+# (and tears down this menu in the process).
 args=()
-declare -A code_app
-code=10
 for a in "${apps[@]}"; do
-    args+=( --button="$a:$code" )
-    code_app[$code]="$a"
-    code=$((code + 1))
+    args+=( --field="$a:FBTN" "lcd-kiosk set $a" )
 done
 
-yad --geometry="$LCD_MENU_GEOMETRY" --css="$css" \
-    --title="LCD menu" --text="Show on LCD" --text-align=center \
-    --buttons-layout=spread "${args[@]}" 2>/dev/null
-choice="${code_app[$?]-}"
-[ -n "$choice" ] || exit 0
-
-# Persist + switch. lcd-kiosk restarts the service, replacing this menu with the
-# chosen app.
-lcd-kiosk set "$choice"
+exec yad --geometry="$LCD_MENU_GEOMETRY" --css="$css" \
+    --form --columns=1 --no-buttons "${args[@]}" 2>/dev/null
