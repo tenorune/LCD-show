@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Select which kiosk app the LCD shows. Updates the boot default (KIOSK_DEFAULT)
+# and restarts the kiosk so the change takes effect immediately.
+set -euo pipefail
+
+LCD_KIOSK_LIB="${LCD_KIOSK_LIB:-/usr/local/lib/lcd-kiosk/lib.sh}"
+LCD_KIOSK_CONF="${LCD_KIOSK_CONF:-/etc/lcd-kiosk/kiosk.conf}"
+# shellcheck source=/dev/null
+. "$LCD_KIOSK_LIB"
+
+usage() {
+    cat <<EOF
+Usage: lcd-kiosk [command]
+  list            List available kiosk apps
+  current         Show the current default app
+  set <name>      Set the default app and switch the LCD to it
+  menu            Switch the LCD to the on-screen touch menu
+  (no command)    Interactive picker
+EOF
+}
+
+apply() {
+    # Restart the kiosk if the service exists; ignore failures (e.g. pre-install).
+    sudo systemctl restart lcd-kiosk.service 2>/dev/null || true
+}
+
+set_and_apply() {
+    local name="$1"
+    if ! kiosk_set_default "$LCD_KIOSK_CONF" "$name"; then
+        echo "Available apps:" >&2
+        kiosk_list_apps "$LCD_KIOSK_CONF" | sed 's/^/  /' >&2
+        return 1
+    fi
+    apply
+    echo "LCD set to: $name"
+}
+
+pick_interactive() {
+    local apps=() items=() choice a
+    mapfile -t apps < <(kiosk_list_apps "$LCD_KIOSK_CONF")
+    for a in "${apps[@]}"; do items+=("$a" ""); done
+    choice="$(whiptail --title "LCD kiosk" \
+        --menu "Choose what to show on the LCD:" 15 50 6 \
+        "${items[@]}" 3>&1 1>&2 2>&3)" || return 0
+    set_and_apply "$choice"
+}
+
+case "${1-}" in
+    list)    kiosk_list_apps "$LCD_KIOSK_CONF" ;;
+    current) kiosk_get_default "$LCD_KIOSK_CONF" ;;
+    set)
+        [ $# -ge 2 ] || { usage; exit 2; }
+        set_and_apply "$2"
+        ;;
+    menu)    set_and_apply menu ;;
+    "")      pick_interactive ;;
+    -h|--help) usage ;;
+    *)       usage; exit 2 ;;
+esac
