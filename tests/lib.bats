@@ -79,14 +79,18 @@ teardown() {
     [ "$output" = "1" ]
 }
 
-@test "kiosk_set_default works when the parent dir is not writable" {
-    # Regression: sed -i failed here because it must create a temp file in the
-    # parent directory. Make the dir read-only (keep the file writable); the
-    # function must still update the pointer in place.
-    chmod u-w "$TMP"
-    run kiosk_set_default "$CONF" status
-    chmod u+w "$TMP"   # restore so teardown can remove the temp dir
-    [ "$status" -eq 0 ]
+@test "kiosk_set_default rewrites the config in place (preserves inode)" {
+    # Regression guard for the root-owned-dir bug: the previous sed -i replaced
+    # the file (new inode), which requires creating a temp file in the parent
+    # directory and fails when that dir is root-owned but the file is
+    # user-writable. The in-place rewrite must keep the SAME inode, so only
+    # write permission on the file is needed. This holds regardless of the
+    # test user (works even when CI runs as root).
+    local before after
+    before="$(stat -c %i "$CONF")"
+    kiosk_set_default "$CONF" status
+    after="$(stat -c %i "$CONF")"
+    [ "$before" = "$after" ]
     run kiosk_get_default "$CONF"
     [ "$output" = "status" ]
 }
