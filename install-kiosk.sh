@@ -48,10 +48,18 @@ needs_root_rights=yes
 EOF
 
 # --- Let the desktop user restart the kiosk without a password ---------------
-cat > /etc/sudoers.d/lcd-kiosk <<EOF
-$user ALL=(root) NOPASSWD: /usr/bin/systemctl restart lcd-kiosk.service
-EOF
-chmod 0440 /etc/sudoers.d/lcd-kiosk
+# Write atomically and validate before moving into place, so an interrupted or
+# malformed write can never corrupt the live sudoers and lock out sudo.
+sudoers_tmp="$(mktemp /etc/sudoers.d/.lcd-kiosk.XXXXXX)"
+printf '%s ALL=(root) NOPASSWD: /usr/bin/systemctl restart lcd-kiosk.service\n' "$user" > "$sudoers_tmp"
+chmod 0440 "$sudoers_tmp"
+if visudo -c -f "$sudoers_tmp" >/dev/null; then
+    mv "$sudoers_tmp" /etc/sudoers.d/lcd-kiosk
+else
+    rm -f "$sudoers_tmp"
+    echo "Generated sudoers entry failed validation; aborting." >&2
+    exit 1
+fi
 
 # --- systemd units -----------------------------------------------------------
 install -m 0644 "$here/lcd-kiosk/lcd-kiosk.service" /etc/systemd/system/lcd-kiosk.service
