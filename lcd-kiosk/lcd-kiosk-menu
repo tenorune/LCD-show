@@ -16,12 +16,16 @@ LCD_MENU_GEOMETRY="${LCD_MENU_GEOMETRY:-480x320+0+0}"
 mapfile -t apps < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
 [ "${#apps[@]}" -gt 0 ] || exit 0
 
-# Inline styling -- edit the font-size here to taste.
+# Scale the fonts up reliably. CSS font-size is overridden by the GTK theme on
+# some yad builds, so use GDK_DPI_SCALE (a font-rendering multiplier that ignores
+# the theme). ~6.5 gives roughly 88px labels; tune via LCD_MENU_FONT_SCALE.
+export GDK_DPI_SCALE="${LCD_MENU_FONT_SCALE:-6.5}"
+
+# Inline styling (dark background to match the kiosk).
 css="$(mktemp --suffix=.css)"
 trap 'rm -f "$css"' EXIT
 cat > "$css" <<'EOF'
 window { background-color: #101418; }
-button, button label, button > label { font-size: 88px; }
 EOF
 
 # One full-width button per app, stacked vertically (--columns=1). Each button
