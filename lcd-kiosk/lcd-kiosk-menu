@@ -1,21 +1,37 @@
 #!/usr/bin/env bash
-# On-LCD touch menu. Renders the kiosk catalog as a touch-clickable list (yad);
-# selecting an entry sets it as the default and switches the LCD to it. Intended
-# to run as the 'menu' kiosk app (inside the fb1 X server).
+# On-LCD touch menu. Renders the kiosk catalog as a touch-friendly list (yad)
+# sized to fill the panel; selecting an entry sets it as the default and
+# switches the LCD to it. Intended to run as the 'menu' kiosk app (inside the
+# fb1 X server, which has no window manager -- hence the explicit geometry).
 set -euo pipefail
 
 LCD_KIOSK_LIB="${LCD_KIOSK_LIB:-/usr/local/lib/lcd-kiosk/lib.sh}"
 LCD_KIOSK_CONF="${LCD_KIOSK_CONF:-/etc/lcd-kiosk/kiosk.conf}"
+# Panel size; override via the environment if your panel differs.
+LCD_MENU_GEOMETRY="${LCD_MENU_GEOMETRY:-480x320+0+0}"
 # shellcheck source=/dev/null
 . "$LCD_KIOSK_LIB"
 
 # Build the choosable list (exclude the menu entry itself).
 mapfile -t choices < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
+[ "${#choices[@]}" -gt 0 ] || exit 0
+
+# Large, dark, touch-friendly styling for the small panel.
+css="$(mktemp --suffix=.css)"
+trap 'rm -f "$css"' EXIT
+cat > "$css" <<'EOF'
+window            { background-color: #101418; }
+label             { color: #d8e0e8; font-size: 20px; }
+treeview          { font-size: 26px; color: #e8e8e8; }
+treeview:selected { background-color: #2277cc; color: #ffffff; }
+button            { font-size: 24px; min-height: 64px; }
+EOF
 
 choice="$(printf '%s\n' "${choices[@]}" \
-    | yad --list --title="LCD menu" --no-headers \
-          --column="Show on LCD" --width=320 --height=240 \
-          --button="Select:0" 2>/dev/null)" || exit 0
+    | yad --list --no-headers --css="$css" \
+          --geometry="$LCD_MENU_GEOMETRY" \
+          --title="LCD menu" --text="Tap an app, then Select" \
+          --column="Show on LCD" --button="Select:0" 2>/dev/null)" || exit 0
 
 choice="${choice%|}"   # yad appends a trailing field separator
 [ -n "$choice" ] || exit 0

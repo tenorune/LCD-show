@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Watch the touchscreen and, on a long-press held in the top-left corner,
-invoke `lcd-kiosk menu` to summon the on-LCD menu. Best-effort convenience; the
-shell command `lcd-kiosk menu` always works as a fallback.
+"""Watch the touchscreen and, on a long-press held in a chosen corner, invoke
+`lcd-kiosk menu` to summon the on-LCD menu. Best-effort convenience; the shell
+command `lcd-kiosk menu` always works as a fallback.
 
 The watcher reads events in parallel with the kiosk X server (which is configured
-with GrabDevice off), and only observes — it never consumes taps.
+with GrabDevice off), and only observes -- it never consumes taps.
+
+Which physical corner maps to which raw ABS_X/ABS_Y end depends on the panel's
+rotation and axis inversion, so the corner is configurable. Defaults target the
+screen's top-left on a tft35a:rotate=90 panel, where top = low raw ABS_X and
+left = high raw ABS_Y:
+    LCD_TOUCH_X_LOW=1   corner is at the low-ABS_X end   (panel top)
+    LCD_TOUCH_Y_LOW=0   corner is at the high-ABS_Y end  (panel left)
+Set either to the opposite value (0/1) to pick a different corner.
 """
 import os
 import subprocess
@@ -15,6 +23,8 @@ from evdev import InputDevice, ecodes, list_devices
 DEVICE_NAME = os.environ.get("LCD_TOUCH_NAME", "ADS7846 Touchscreen")
 CORNER_FRAC = float(os.environ.get("LCD_TOUCH_CORNER_FRAC", "0.25"))
 HOLD_SECONDS = float(os.environ.get("LCD_TOUCH_HOLD_SECONDS", "1.5"))
+X_AT_LOW = os.environ.get("LCD_TOUCH_X_LOW", "1") != "0"
+Y_AT_LOW = os.environ.get("LCD_TOUCH_Y_LOW", "0") != "0"
 
 
 def find_device():
@@ -42,8 +52,10 @@ def main():
 
     xmin, xmax = axis_range(dev, ecodes.ABS_X)
     ymin, ymax = axis_range(dev, ecodes.ABS_Y)
-    x_thresh = xmin + (xmax - xmin) * CORNER_FRAC
-    y_thresh = ymin + (ymax - ymin) * CORNER_FRAC
+    x_lo = xmin + (xmax - xmin) * CORNER_FRAC
+    x_hi = xmax - (xmax - xmin) * CORNER_FRAC
+    y_lo = ymin + (ymax - ymin) * CORNER_FRAC
+    y_hi = ymax - (ymax - ymin) * CORNER_FRAC
 
     x = y = None
     touching = False
@@ -64,8 +76,9 @@ def main():
             continue
 
         if touching and not fired and x is not None and y is not None:
-            in_corner = x <= x_thresh and y <= y_thresh
-            if in_corner and (time.time() - press_start) >= HOLD_SECONDS:
+            in_x = x <= x_lo if X_AT_LOW else x >= x_hi
+            in_y = y <= y_lo if Y_AT_LOW else y >= y_hi
+            if in_x and in_y and (time.time() - press_start) >= HOLD_SECONDS:
                 fired = True
                 subprocess.Popen(["lcd-kiosk", "menu"])
 
