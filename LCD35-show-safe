@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Milestone 1 installer: bring up the goodtft 3.5" SPI panel (/dev/fb1) and the
+# XPT2046 touch input on Raspberry Pi OS Trixie WITHOUT disabling Wayland, so
+# Raspberry Pi Connect keeps working. After running this and rebooting, the LCD
+# shows the text console and the touchscreen produces input events.
+set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+LCD_KIOSK_LIB="$here/lcd-kiosk/lib.sh"
+# shellcheck source=lcd-kiosk/lib.sh
+. "$LCD_KIOSK_LIB"
+
+CONFIG_TXT="/boot/firmware/config.txt"
+
+# --- Preconditions -----------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Please run with sudo: sudo ./LCD35-show-safe" >&2
+    exit 1
+fi
+
+deb_version="$(tr -d '\n' < /etc/debian_version 2>/dev/null)"
+case "$deb_version" in
+    13*|trixie*) : ;;
+    *) echo "This installer targets Raspberry Pi OS Trixie (Debian 13). Found: '$deb_version'. Aborting." >&2; exit 1 ;;
+esac
+
+if [ ! -f "$CONFIG_TXT" ]; then
+    echo "Expected $CONFIG_TXT (Trixie layout) not found. Aborting." >&2
+    exit 1
+fi
+
+# --- Backup ------------------------------------------------------------------
+backup="$CONFIG_TXT.lcd-safe.bak"
+if [ ! -f "$backup" ]; then
+    cp -a "$CONFIG_TXT" "$backup"
+    echo "Backed up $CONFIG_TXT -> $backup"
+else
+    echo "Backup already exists: $backup (left untouched)"
+fi
+
+# --- Packages ----------------------------------------------------------------
+echo "Installing X server + fbdev + evdev packages..."
+apt-get update
+apt-get install -y xserver-xorg-core xserver-xorg-video-fbdev \
+    xserver-xorg-input-evdev xinit x11-xserver-utils evtest
+
+# --- Device-tree overlay -----------------------------------------------------
+echo "Installing tft35a overlay..."
+cp "$here/usr/tft35a-overlay.dtb" /boot/firmware/overlays/tft35a.dtbo
+
+# --- config.txt edits (idempotent; KMS/Wayland left intact) -------------------
+echo "Editing $CONFIG_TXT (keeping vc4-kms-v3d enabled)..."
+config_append_once "$CONFIG_TXT" "dtparam=spi=on"
+config_append_once "$CONFIG_TXT" "dtoverlay=tft35a:rotate=90"
+config_append_once "$CONFIG_TXT" "dtoverlay=ads7846,cs=1,penirq=25,penirq_pull=2,speed=50000,keep_vref_on=0,swapxy=0,pmax=255,xohms=150,xmin=200,xmax=3900,ymin=200,ymax=3900"
+
+# --- Touch routing -----------------------------------------------------------
+echo "Installing touch-ignore udev rule for the Wayland session..."
+cp "$here/lcd-kiosk/99-lcd-touch-ignore.rules" /etc/udev/rules.d/99-lcd-touch-ignore.rules
+
+echo
+echo "Milestone 1 install complete."
+echo "We did NOT change your Wayland session or boot target, so Raspberry Pi"
+echo "Connect should keep working."
+echo
+echo "Verify after reboot:"
+echo "  1) ls -l /dev/fb1            # the SPI panel framebuffer should exist"
+echo "  2) sudo evtest              # pick 'ADS7846 Touchscreen', touch the panel"
+echo "  3) rpi-connect doctor       # should report a Wayland compositor"
+echo
+read -r -p "Reboot now to apply? [y/N] " ans
+case "$ans" in
+    y|Y) reboot ;;
+    *) echo "Not rebooting. Reboot manually to apply changes." ;;
+esac
