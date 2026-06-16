@@ -67,3 +67,25 @@ kiosk_set_default() {
     cat "$tmp" > "$conf"
     rm -f "$tmp"
 }
+
+# kiosk_find_fb [SYSFS_DIR]
+# Print the /dev/fbN device whose sysfs 'name' equals LCD_FB_NAME (default
+# "fb_ili9486"), i.e. the SPI panel's framebuffer. Returns 1 if none is found.
+# The framebuffer NUMBER is not stable (on a headless KMS system the SPI panel
+# can be /dev/fb0; with HDMI attached it may be /dev/fb1), so the panel must be
+# located by name rather than by a hard-coded number. SYSFS_DIR defaults to the
+# real /sys/class/graphics and is overridable for tests.
+kiosk_find_fb() {
+    local want="${LCD_FB_NAME:-fb_ili9486}"
+    local base="${1:-/sys/class/graphics}"
+    local d name
+    for d in "$base"/fb[0-9]*; do
+        [ -r "$d/name" ] || continue
+        name="$(cat "$d/name" 2>/dev/null)"
+        if [ "$name" = "$want" ]; then
+            printf '/dev/%s\n' "${d##*/}"
+            return 0
+        fi
+    done
+    return 1
+}

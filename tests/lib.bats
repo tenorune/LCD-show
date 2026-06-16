@@ -94,3 +94,40 @@ teardown() {
     run kiosk_get_default "$CONF"
     [ "$output" = "status" ]
 }
+
+@test "kiosk_find_fb locates the panel framebuffer by name (fb0)" {
+    local sys="$TMP/sys"
+    mkdir -p "$sys/fb0" "$sys/fb1"
+    echo "fb_ili9486" > "$sys/fb0/name"
+    echo "vc4" > "$sys/fb1/name"
+    run kiosk_find_fb "$sys"
+    [ "$status" -eq 0 ]
+    [ "$output" = "/dev/fb0" ]
+}
+
+@test "kiosk_find_fb finds the panel regardless of number (fb1)" {
+    local sys="$TMP/sys"
+    mkdir -p "$sys/fb0" "$sys/fb1"
+    echo "vc4drmfb" > "$sys/fb0/name"
+    echo "fb_ili9486" > "$sys/fb1/name"
+    run kiosk_find_fb "$sys"
+    [ "$status" -eq 0 ]
+    [ "$output" = "/dev/fb1" ]
+}
+
+@test "kiosk_find_fb returns 1 when no panel framebuffer is present" {
+    local sys="$TMP/sys"
+    mkdir -p "$sys/fb0"
+    echo "vc4drmfb" > "$sys/fb0/name"
+    run kiosk_find_fb "$sys"
+    [ "$status" -eq 1 ]
+}
+
+@test "kiosk_find_fb honors LCD_FB_NAME override" {
+    local sys="$TMP/sys"
+    mkdir -p "$sys/fb0"
+    echo "mi0283qt" > "$sys/fb0/name"
+    LCD_FB_NAME="mi0283qt" run kiosk_find_fb "$sys"
+    [ "$status" -eq 0 ]
+    [ "$output" = "/dev/fb0" ]
+}

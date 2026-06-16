@@ -22,7 +22,9 @@ Every selection persists as the new boot default.
 
 ## Verify
 
-- `ls -l /dev/fb1` — the panel framebuffer exists.
+- `cat /sys/class/graphics/fb*/name` — one entry is `fb_ili9486` (the panel; it
+  may be `/dev/fb0` on a headless Pi or `/dev/fb1` with HDMI attached — the kiosk
+  finds it by name, so the number does not matter).
 - `sudo evtest` — the `ADS7846 Touchscreen` produces events.
 - `rpi-connect doctor` — reports a Wayland compositor.
 - `journalctl -u lcd-kiosk -b` — kiosk launcher logs.

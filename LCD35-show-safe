@@ -67,7 +67,8 @@ echo "We did NOT change your Wayland session or boot target, so Raspberry Pi"
 echo "Connect should keep working."
 echo
 echo "Verify after reboot:"
-echo "  1) ls -l /dev/fb1            # the SPI panel framebuffer should exist"
+echo "  1) cat /sys/class/graphics/fb*/name   # one entry should be 'fb_ili9486'"
+echo "     (it may be /dev/fb0 on a headless Pi, /dev/fb1 with HDMI attached)"
 echo "  2) sudo evtest              # pick 'ADS7846 Touchscreen', touch the panel"
 echo "  3) rpi-connect doctor       # should report a Wayland compositor"
 echo
