@@ -34,8 +34,10 @@ read -r win_h win_y < <(awk -v s="$GDK_DPI_SCALE" -v n="${#apps[@]}" -v H="$LCD_
     h = n * bh + 24;           # + window padding
     if (h > H) h = H;
     y = int((H - h) / 2); if (y < 0) y = 0;
-    printf "%d %d", h, y;
-}')
+    printf "%d %d\n", h, y;
+}') || true
+: "${win_h:=$LCD_MENU_HEIGHT}"
+: "${win_y:=0}"
 
 css="$(mktemp --suffix=.css)"
 trap 'rm -f "$css"' EXIT
