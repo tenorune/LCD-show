@@ -34,3 +34,47 @@ teardown() {
     run grep -c '^dtparam=spi=on$' "$f"
     [ "$output" = "1" ]
 }
+
+@test "kiosk_list_apps lists catalog names in order" {
+    run kiosk_list_apps "$CONF"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "browser" ]
+    [ "${lines[1]}" = "status" ]
+    [ "${lines[2]}" = "menu" ]
+}
+
+@test "kiosk_get_command returns the command for a known app" {
+    run kiosk_get_command "$CONF" status
+    [ "$status" -eq 0 ]
+    [ "$output" = "xterm -fullscreen -e htop" ]
+}
+
+@test "kiosk_get_command fails for an unknown app" {
+    run kiosk_get_command "$CONF" nope
+    [ "$status" -eq 1 ]
+}
+
+@test "kiosk_get_default reads the pointer" {
+    run kiosk_get_default "$CONF"
+    [ "$output" = "browser" ]
+}
+
+@test "kiosk_set_default updates the pointer for a known app" {
+    kiosk_set_default "$CONF" status
+    run kiosk_get_default "$CONF"
+    [ "$output" = "status" ]
+}
+
+@test "kiosk_set_default rejects an unknown app and leaves the pointer" {
+    run kiosk_set_default "$CONF" bogus
+    [ "$status" -eq 1 ]
+    run kiosk_get_default "$CONF"
+    [ "$output" = "browser" ]
+}
+
+@test "kiosk_set_default does not duplicate the pointer line" {
+    kiosk_set_default "$CONF" status
+    kiosk_set_default "$CONF" menu
+    run grep -c '^KIOSK_DEFAULT=' "$CONF"
+    [ "$output" = "1" ]
+}
