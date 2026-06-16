@@ -49,10 +49,13 @@ echo "Installing tft35a overlay..."
 cp "$here/usr/tft35a-overlay.dtb" /boot/firmware/overlays/tft35a.dtbo
 
 # --- config.txt edits (idempotent; KMS/Wayland left intact) -------------------
+# The tft35a overlay drives BOTH the ILI9486 panel (spi0.0 -> /dev/fb1) and the
+# XPT2046/ADS7846 touch (spi0.1). Do NOT add a separate dtoverlay=ads7846: it
+# steals spi0.1 from the overlay's touch node and grabs GPIO 25, which is the
+# panel's reset pin, causing the display init to fail and /dev/fb1 to be absent.
 echo "Editing $CONFIG_TXT (keeping vc4-kms-v3d enabled)..."
 config_append_once "$CONFIG_TXT" "dtparam=spi=on"
 config_append_once "$CONFIG_TXT" "dtoverlay=tft35a:rotate=90"
-config_append_once "$CONFIG_TXT" "dtoverlay=ads7846,cs=1,penirq=25,penirq_pull=2,speed=50000,keep_vref_on=0,swapxy=0,pmax=255,xohms=150,xmin=200,xmax=3900,ymin=200,ymax=3900"
 
 # --- Touch routing -----------------------------------------------------------
 echo "Installing touch-ignore udev rule for the Wayland session..."
