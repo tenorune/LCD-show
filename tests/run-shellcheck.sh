@@ -10,7 +10,6 @@ targets=(
     lcd-kiosk/lcd-kiosk-start.sh
     install-kiosk.sh
     lcd-kiosk/lcd-kiosk
-    lcd-kiosk/lcd-kiosk-menu
     LCD-revert
 )
 

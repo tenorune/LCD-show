@@ -1,42 +1,84 @@
-#!/usr/bin/env bash
-# On-LCD touch menu. Renders each kiosk app as a large, full-width button; the
-# stacked buttons are stretched to fill the panel (no empty stripes). Tapping one
-# sets it as the default and switches the LCD to it. Intended to run as the 'menu'
-# kiosk app (inside the fb1 X server, which has no window manager -- hence the
-# explicit geometry).
-set -euo pipefail
+#!/usr/bin/env python3
+"""On-LCD touch menu (GTK).
 
-LCD_KIOSK_LIB="${LCD_KIOSK_LIB:-/usr/local/lib/lcd-kiosk/lib.sh}"
-LCD_KIOSK_CONF="${LCD_KIOSK_CONF:-/etc/lcd-kiosk/kiosk.conf}"
-# Panel size; override via the environment if your panel differs.
-LCD_MENU_GEOMETRY="${LCD_MENU_GEOMETRY:-480x320+0+0}"
-LCD_MENU_HEIGHT="${LCD_MENU_HEIGHT:-320}"
-# shellcheck source=/dev/null
-. "$LCD_KIOSK_LIB"
+A full-panel dark window with one large, full-width button per kiosk app, with
+the button group vertically centered. Tapping a button switches the kiosk to that
+app. Runs as the 'menu' kiosk app inside the fb1 X server, which has no window
+manager -- so size and position are set explicitly, and the dark area above and
+below the buttons is the window's own background (no separate backdrop to mismatch).
 
-# Build the choosable list (exclude the menu entry itself).
-mapfile -t apps < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
-[ "${#apps[@]}" -gt 0 ] || exit 0
+This is GTK rather than yad because some yad builds ignore CSS sizing and yad's
+form has no vertical-centering option.
+"""
+import os
+import subprocess
 
-# Font size: CSS font-size is ignored by some yad builds, so scale via
-# GDK_DPI_SCALE (theme-independent). Tune with LCD_MENU_FONT_SCALE.
-export GDK_DPI_SCALE="${LCD_MENU_FONT_SCALE:-3.5}"
+import gi
 
-# Stretch each button so the stacked buttons fill the panel height (no stripes).
-btn_h=$(( (LCD_MENU_HEIGHT - 16) / ${#apps[@]} ))
-[ "$btn_h" -lt 40 ] && btn_h=40
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gdk, Gtk  # noqa: E402
 
-css="$(mktemp --suffix=.css)"
-trap 'rm -f "$css"' EXIT
-printf 'window { background-color: #101418; }\nbutton { min-height: %dpx; }\n' "$btn_h" > "$css"
+CONF = os.environ.get("LCD_KIOSK_CONF", "/etc/lcd-kiosk/kiosk.conf")
+FONT_PX = int(os.environ.get("LCD_MENU_FONT_PX", "44"))
+WIDTH = int(os.environ.get("LCD_MENU_WIDTH", "480"))
+HEIGHT = int(os.environ.get("LCD_MENU_HEIGHT", "320"))
 
-# One full-width button per app, stacked vertically (--columns=1). Each button
-# runs `lcd-kiosk set <app>`, which restarts the kiosk onto the chosen app
-# (and tears down this menu in the process).
-args=()
-for a in "${apps[@]}"; do
-    args+=( --field="$a:FBTN" "lcd-kiosk set $a" )
-done
 
-exec yad --geometry="$LCD_MENU_GEOMETRY" --css="$css" \
-    --form --columns=1 --no-buttons "${args[@]}" 2>/dev/null
+def list_apps():
+    """Return catalog app names from kiosk.conf, excluding 'menu' itself."""
+    apps = []
+    try:
+        with open(CONF) as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("KIOSK_APP_") and "=" in line:
+                    name = line[len("KIOSK_APP_"):line.index("=")]
+                    if name and name != "menu":
+                        apps.append(name)
+    except OSError:
+        pass
+    return apps
+
+
+def on_clicked(_button, name):
+    subprocess.Popen(["lcd-kiosk", "set", name])
+    Gtk.main_quit()
+
+
+def main():
+    apps = list_apps()
+    if not apps:
+        return
+
+    css = Gtk.CssProvider()
+    css.load_from_data(
+        ("window { background-color: #101418; }"
+         "button { font-size: %dpx; margin: 8px 16px; }" % FONT_PX).encode()
+    )
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+
+    win = Gtk.Window()
+    win.set_decorated(False)
+    win.set_resizable(False)
+    win.set_default_size(WIDTH, HEIGHT)
+    win.connect("destroy", Gtk.main_quit)
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+    box.set_valign(Gtk.Align.CENTER)
+    for name in apps:
+        button = Gtk.Button(label=name)
+        button.set_hexpand(True)
+        button.connect("clicked", on_clicked, name)
+        box.pack_start(button, False, True, 0)
+    win.add(box)
+
+    win.show_all()
+    win.move(0, 0)
+    win.resize(WIDTH, HEIGHT)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()
