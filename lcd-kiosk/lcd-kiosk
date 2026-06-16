@@ -38,6 +38,10 @@ set_and_apply() {
 pick_interactive() {
     local apps=() items=() choice a
     mapfile -t apps < <(kiosk_list_apps "$LCD_KIOSK_CONF")
+    if [ "${#apps[@]}" -eq 0 ]; then
+        echo "No kiosk apps configured in $LCD_KIOSK_CONF" >&2
+        return 1
+    fi
     for a in "${apps[@]}"; do items+=("$a" ""); done
     choice="$(whiptail --title "LCD kiosk" \
         --menu "Choose what to show on the LCD:" 15 50 6 \

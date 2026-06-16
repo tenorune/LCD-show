@@ -8,6 +8,7 @@ setup() {
     cat > "$LCD_KIOSK_CONF" <<'EOF'
 KIOSK_APP_browser="chromium --kiosk x"
 KIOSK_APP_status="xterm -e htop"
+KIOSK_APP_menu="xterm -e /usr/local/bin/lcd-kiosk-menu"
 KIOSK_DEFAULT="browser"
 EOF
     # Stub sudo/systemctl so 'set' does not touch the real system.
@@ -44,4 +45,11 @@ teardown() { rm -rf "$TMP"; }
     [ "$status" -ne 0 ]
     run bash "$CLI" current
     [ "$output" = "browser" ]
+}
+
+@test "lcd-kiosk menu sets default to menu" {
+    run bash "$CLI" menu
+    [ "$status" -eq 0 ]
+    run bash "$CLI" current
+    [ "$output" = "menu" ]
 }
