@@ -27,6 +27,15 @@ rm -f /etc/X11/lcd-kiosk-fb1.conf
 rm -f /etc/sudoers.d/lcd-kiosk
 rm -f /etc/udev/rules.d/99-lcd-touch-ignore.rules
 rm -rf /opt/lcd-kiosk
+rm -f /boot/firmware/overlays/tft35a.dtbo
+# Remove the Xwrapper.config we wrote, but ONLY if it is byte-for-byte the file
+# install-kiosk.sh created — never clobber a user's customized version.
+if [ -f /etc/X11/Xwrapper.config ] && \
+   [ "$(cat /etc/X11/Xwrapper.config)" = "allowed_users=anybody
+needs_root_rights=yes" ]; then
+    rm -f /etc/X11/Xwrapper.config
+    echo "Removed /etc/X11/Xwrapper.config (restored default X wrapper policy)"
+fi
 echo "(left /etc/lcd-kiosk/kiosk.conf in place; remove manually if desired)"
 systemctl daemon-reload || true
 
