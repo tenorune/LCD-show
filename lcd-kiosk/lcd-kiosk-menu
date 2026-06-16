@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# On-LCD touch menu. Renders the kiosk catalog as a touch-friendly list (yad)
-# sized to fill the panel; selecting an entry sets it as the default and
-# switches the LCD to it. Intended to run as the 'menu' kiosk app (inside the
-# fb1 X server, which has no window manager -- hence the explicit geometry).
+# On-LCD touch menu. Renders each kiosk app as a large, centered, touch-friendly
+# button filling the panel; tapping one sets it as the default and switches the
+# LCD to it. Intended to run as the 'menu' kiosk app (inside the fb1 X server,
+# which has no window manager -- hence the explicit geometry).
 set -euo pipefail
 
 LCD_KIOSK_LIB="${LCD_KIOSK_LIB:-/usr/local/lib/lcd-kiosk/lib.sh}"
@@ -13,27 +13,32 @@ LCD_MENU_GEOMETRY="${LCD_MENU_GEOMETRY:-480x320+0+0}"
 . "$LCD_KIOSK_LIB"
 
 # Build the choosable list (exclude the menu entry itself).
-mapfile -t choices < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
-[ "${#choices[@]}" -gt 0 ] || exit 0
+mapfile -t apps < <(kiosk_list_apps "$LCD_KIOSK_CONF" | grep -vx menu)
+[ "${#apps[@]}" -gt 0 ] || exit 0
 
 # Large, dark, touch-friendly styling for the small panel.
 css="$(mktemp --suffix=.css)"
 trap 'rm -f "$css"' EXIT
 cat > "$css" <<'EOF'
-window            { background-color: #101418; }
-label             { color: #d8e0e8; font-size: 20px; }
-treeview          { font-size: 26px; color: #e8e8e8; }
-treeview:selected { background-color: #2277cc; color: #ffffff; }
-button            { font-size: 24px; min-height: 64px; }
+window { background-color: #101418; }
+label  { color: #cfd8e0; font-size: 18px; }
+button { font-size: 44px; min-height: 150px; margin: 10px; }
 EOF
 
-choice="$(printf '%s\n' "${choices[@]}" \
-    | yad --list --no-headers --css="$css" \
-          --geometry="$LCD_MENU_GEOMETRY" \
-          --title="LCD menu" --text="Tap an app, then Select" \
-          --column="Show on LCD" --button="Select:0" 2>/dev/null)" || exit 0
+# One big button per app; each button returns a distinct exit code.
+args=()
+declare -A code_app
+code=10
+for a in "${apps[@]}"; do
+    args+=( --button="$a:$code" )
+    code_app[$code]="$a"
+    code=$((code + 1))
+done
 
-choice="${choice%|}"   # yad appends a trailing field separator
+yad --geometry="$LCD_MENU_GEOMETRY" --css="$css" \
+    --title="LCD menu" --text="Show on LCD" --text-align=center \
+    --buttons-layout=spread "${args[@]}" 2>/dev/null
+choice="${code_app[$?]-}"
 [ -n "$choice" ] || exit 0
 
 # Persist + switch. lcd-kiosk restarts the service, replacing this menu with the
