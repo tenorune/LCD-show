@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Watch the touchscreen and, on a long-press held in the top-left corner,
+invoke `lcd-kiosk menu` to summon the on-LCD menu. Best-effort convenience; the
+shell command `lcd-kiosk menu` always works as a fallback.
+
+The watcher reads events in parallel with the kiosk X server (which is configured
+with GrabDevice off), and only observes — it never consumes taps.
+"""
+import os
+import subprocess
+import time
+
+from evdev import InputDevice, ecodes, list_devices
+
+DEVICE_NAME = os.environ.get("LCD_TOUCH_NAME", "ADS7846 Touchscreen")
+CORNER_FRAC = float(os.environ.get("LCD_TOUCH_CORNER_FRAC", "0.25"))
+HOLD_SECONDS = float(os.environ.get("LCD_TOUCH_HOLD_SECONDS", "1.5"))
+
+
+def find_device():
+    for path in list_devices():
+        dev = InputDevice(path)
+        if DEVICE_NAME in dev.name:
+            return dev
+    return None
+
+
+def axis_range(dev, code):
+    for c, absinfo in dev.capabilities().get(ecodes.EV_ABS, []):
+        if c == code:
+            return absinfo.min, absinfo.max
+    return 0, 4095
+
+
+def main():
+    dev = None
+    while dev is None:
+        dev = find_device()
+        if dev is None:
+            time.sleep(2)
+
+    xmin, xmax = axis_range(dev, ecodes.ABS_X)
+    ymin, ymax = axis_range(dev, ecodes.ABS_Y)
+    x_thresh = xmin + (xmax - xmin) * CORNER_FRAC
+    y_thresh = ymin + (ymax - ymin) * CORNER_FRAC
+
+    x = y = None
+    touching = False
+    press_start = 0.0
+    fired = False
+
+    for ev in dev.read_loop():
+        if ev.type == ecodes.EV_ABS:
+            if ev.code == ecodes.ABS_X:
+                x = ev.value
+            elif ev.code == ecodes.ABS_Y:
+                y = ev.value
+        elif ev.type == ecodes.EV_KEY and ev.code == ecodes.BTN_TOUCH:
+            touching = ev.value == 1
+            if touching:
+                press_start = time.time()
+                fired = False
+            continue
+
+        if touching and not fired and x is not None and y is not None:
+            in_corner = x <= x_thresh and y <= y_thresh
+            if in_corner and (time.time() - press_start) >= HOLD_SECONDS:
+                fired = True
+                subprocess.Popen(["lcd-kiosk", "menu"])
+
+
+if __name__ == "__main__":
+    main()
