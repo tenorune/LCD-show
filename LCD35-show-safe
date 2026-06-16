@@ -68,7 +68,7 @@ echo "  1) ls -l /dev/fb1            # the SPI panel framebuffer should exist"
 echo "  2) sudo evtest              # pick 'ADS7846 Touchscreen', touch the panel"
 echo "  3) rpi-connect doctor       # should report a Wayland compositor"
 echo
-read -r -p "Reboot now to apply? [y/N] " ans
+read -r -p "Reboot now to apply? [y/N] " ans || ans=""
 case "$ans" in
     y|Y) reboot ;;
     *) echo "Not rebooting. Reboot manually to apply changes." ;;
