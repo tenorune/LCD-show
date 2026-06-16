@@ -11,6 +11,7 @@ targets=(
     install-kiosk.sh
     lcd-kiosk/lcd-kiosk
     lcd-kiosk/lcd-kiosk-menu
+    LCD-revert
 )
 
 # Tolerate not-yet-created files so the gate can be run at any point in the plan.

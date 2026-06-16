@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Undo the LCD kiosk install: stop/disable services, remove installed files, and
+# restore the original /boot/firmware/config.txt from the backup.
+set -euo pipefail
+
+CONFIG_TXT="/boot/firmware/config.txt"
+backup="$CONFIG_TXT.lcd-safe.bak"
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Please run with sudo: sudo ./LCD-revert" >&2
+    exit 1
+fi
+
+echo "Stopping and disabling services..."
+for svc in lcd-kiosk.service lcd-kiosk-touchd.service; do
+    systemctl disable --now "$svc" 2>/dev/null || true
+done
+
+echo "Removing installed files..."
+rm -f /usr/local/bin/lcd-kiosk /usr/local/bin/lcd-kiosk-start \
+      /usr/local/bin/lcd-kiosk-menu /usr/local/bin/lcd-kiosk-touchd
+rm -rf /usr/local/lib/lcd-kiosk
+rm -f /etc/systemd/system/lcd-kiosk.service \
+      /etc/systemd/system/lcd-kiosk-touchd.service
+rm -rf /etc/systemd/system/lcd-kiosk.service.d
+rm -f /etc/X11/lcd-kiosk-fb1.conf
+rm -f /etc/sudoers.d/lcd-kiosk
+rm -f /etc/udev/rules.d/99-lcd-touch-ignore.rules
+rm -rf /opt/lcd-kiosk
+echo "(left /etc/lcd-kiosk/kiosk.conf in place; remove manually if desired)"
+systemctl daemon-reload || true
+
+if [ -f "$backup" ]; then
+    cp -a "$backup" "$CONFIG_TXT"
+    echo "Restored $CONFIG_TXT from $backup"
+else
+    echo "WARNING: no backup ($backup) found; $CONFIG_TXT left as-is." >&2
+fi
+
+echo "Revert complete. Reboot to return to the pre-LCD state."
